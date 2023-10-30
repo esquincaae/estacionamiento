@@ -15,6 +15,7 @@ const (
 	altoVentana   = 600.0
 	espacios      = 5
 	tamanoEspacio = anchoVentana / float64(espacios+2)
+	tamanoAuto    = tamanoEspacio * 0.6
 )
 
 type Estacionamiento struct {
@@ -28,18 +29,19 @@ func NuevoEstacionamiento(capacidad int) *Estacionamiento {
 	}
 }
 
-func (e *Estacionamiento) Entrar() bool {
+func (e *Estacionamiento) Entrar() int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	if e.espacios > 0 {
+		pos := espacios - e.espacios
 		e.espacios--
-		return true
+		return pos
 	}
-	return false
+	return -1
 }
 
-func (e *Estacionamiento) Salir() {
+func (e *Estacionamiento) Salir(pos int) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -58,15 +60,19 @@ func run() {
 
 	e := NuevoEstacionamiento(espacios)
 
-	// Simulación de vehículos entrando y saliendo
+	autos := make([]bool, espacios)
+
 	go func() {
 		for i := 0; i < 10; i++ {
-			time.Sleep(time.Millisecond * 500) // Nuevo vehículo cada 500ms
-			if e.Entrar() {
-				fmt.Println("Vehículo", i, "entró")
-				time.Sleep(time.Second * 2) // El vehículo se queda por 2 segundos
-				e.Salir()
-				fmt.Println("Vehículo", i, "salió")
+			time.Sleep(time.Millisecond * 500)
+			pos := e.Entrar()
+			if pos != -1 {
+				fmt.Println("Vehículo", i, "entró y se estacionó en el espacio", pos)
+				autos[pos] = true
+				time.Sleep(time.Second * 2)
+				e.Salir(pos)
+				autos[pos] = false
+				fmt.Println("Vehículo", i, "salió del espacio", pos)
 			} else {
 				fmt.Println("Vehículo", i, "no encontró espacio")
 			}
@@ -75,21 +81,27 @@ func run() {
 
 	for !win.Closed() {
 		win.Clear(pixel.RGB(0, 0, 0))
-
 		im := imdraw.New(nil)
+
+		// Dibuja espacios de estacionamiento
 		for i := 0; i < espacios; i++ {
-			color := pixel.RGB(0, 1, 0) // Espacio libre (verde)
-			if i >= espacios-e.espacios {
-				color = pixel.RGB(1, 0, 0) // Espacio ocupado (rojo)
-			}
 			posX := win.Bounds().Center().X + tamanoEspacio*float64(i-espacios/2)
-			im.Color = color
+			im.Color = pixel.RGB(1, 1, 1)
 			im.Push(pixel.V(posX, win.Bounds().Center().Y-tamanoEspacio/2))
 			im.Push(pixel.V(posX+tamanoEspacio, win.Bounds().Center().Y+tamanoEspacio/2))
 			im.Rectangle(0)
-		}
-		im.Draw(win)
 
+			if autos[i] {
+				// Dibuja auto
+				im.Color = pixel.RGB(0, 0, 1)
+				offset := (tamanoEspacio - tamanoAuto) / 2
+				im.Push(pixel.V(posX+offset, win.Bounds().Center().Y-tamanoAuto/2+offset))
+				im.Push(pixel.V(posX+tamanoAuto+offset, win.Bounds().Center().Y+tamanoAuto/2+offset))
+				im.Rectangle(0)
+			}
+		}
+
+		im.Draw(win)
 		win.Update()
 	}
 }
