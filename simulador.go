@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
@@ -11,16 +10,25 @@ import (
 )
 
 const (
-	anchoVentana  = 800.0
-	altoVentana   = 600.0
-	espacios      = 5
-	tamanoEspacio = anchoVentana / float64(espacios+2)
-	tamanoAuto    = tamanoEspacio * 0.6
+	anchoVentana         = 800.0
+	altoVentana          = 600.0
+	espacios             = 10 // 5 arriba y 5 abajo
+	tamanoEspacio        = anchoVentana / float64(espacios/2+1)
+	altoEspacio          = 100.0
+	anchoAuto            = 40.0
+	altoAuto             = 60.0
+	velocidad            = 2.0
 )
 
 type Estacionamiento struct {
 	espacios   int
 	mu         sync.Mutex
+}
+
+type Auto struct {
+	posX float64
+	posY float64
+	dir  float64 // -1 para los autos que salen, 1 para los autos que entran
 }
 
 func NuevoEstacionamiento(capacidad int) *Estacionamiento {
@@ -44,7 +52,6 @@ func (e *Estacionamiento) Entrar() int {
 func (e *Estacionamiento) Salir(pos int) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-
 	e.espacios++
 }
 
@@ -59,22 +66,36 @@ func run() {
 	}
 
 	e := NuevoEstacionamiento(espacios)
-
-	autos := make([]bool, espacios)
+	autos := make([]*Auto, 0)
 
 	go func() {
-		for i := 0; i < 10; i++ {
-			time.Sleep(time.Millisecond * 500)
+		for {
 			pos := e.Entrar()
 			if pos != -1 {
-				fmt.Println("Vehículo", i, "entró y se estacionó en el espacio", pos)
-				autos[pos] = true
-				time.Sleep(time.Second * 2)
-				e.Salir(pos)
-				autos[pos] = false
-				fmt.Println("Vehículo", i, "salió del espacio", pos)
-			} else {
-				fmt.Println("Vehículo", i, "no encontró espacio")
+				auto := &Auto{posX: 0 - anchoAuto, posY: altoVentana / 2 + altoAuto/2, dir: 1}
+				autos = append(autos, auto)
+				time.Sleep(time.Millisecond * 800)
+			}
+
+			if len(autos) > 0 && autos[0].posX > anchoVentana {
+				e.Salir(0)
+				autos = autos[1:]
+			}
+		}
+	}()
+
+	go func() {
+		for {
+			pos := e.Entrar()
+			if pos != -1 {
+				auto := &Auto{posX: anchoVentana, posY: altoVentana/2 - 3*altoAuto/2, dir: -1}
+				autos = append(autos, auto)
+				time.Sleep(time.Millisecond * 1300)
+			}
+
+			if len(autos) > 0 && autos[0].posX < 0-anchoAuto {
+				e.Salir(0)
+				autos = autos[1:]
 			}
 		}
 	}()
@@ -83,22 +104,36 @@ func run() {
 		win.Clear(pixel.RGB(0, 0, 0))
 		im := imdraw.New(nil)
 
+		// Dibuja estacionamiento
+		im.Color = pixel.RGB(0.5, 0.5, 0.5)
+		im.Push(pixel.V(0, altoVentana/2+altoEspacio))
+		im.Push(pixel.V(anchoVentana, altoVentana/2-altoEspacio))
+		im.Rectangle(0)
+
 		// Dibuja espacios de estacionamiento
-		for i := 0; i < espacios; i++ {
-			posX := win.Bounds().Center().X + tamanoEspacio*float64(i-espacios/2)
+		for i := 0; i < espacios/2; i++ {
+			posX := tamanoEspacio * float64(i+1)
+
+			// Arriba
 			im.Color = pixel.RGB(1, 1, 1)
-			im.Push(pixel.V(posX, win.Bounds().Center().Y-tamanoEspacio/2))
-			im.Push(pixel.V(posX+tamanoEspacio, win.Bounds().Center().Y+tamanoEspacio/2))
+			im.Push(pixel.V(posX, altoVentana/2+altoEspacio))
+			im.Push(pixel.V(posX+tamanoEspacio, altoVentana))
 			im.Rectangle(0)
 
-			if autos[i] {
-				// Dibuja auto
-				im.Color = pixel.RGB(0, 0, 1)
-				offset := (tamanoEspacio - tamanoAuto) / 2
-				im.Push(pixel.V(posX+offset, win.Bounds().Center().Y-tamanoAuto/2+offset))
-				im.Push(pixel.V(posX+tamanoAuto+offset, win.Bounds().Center().Y+tamanoAuto/2+offset))
-				im.Rectangle(0)
-			}
+			// Abajo
+			im.Push(pixel.V(posX, 0))
+			im.Push(pixel.V(posX+tamanoEspacio, altoVentana/2-altoEspacio))
+			im.Rectangle(0)
+		}
+
+		// Dibuja autos
+		for _, auto := range autos {
+			im.Color = pixel.RGB(0, 0, 1)
+			im.Push(pixel.V(auto.posX, auto.posY))
+			im.Push(pixel.V(auto.posX+anchoAuto, auto.posY+altoAuto))
+			im.Rectangle(0)
+
+			auto.posX += velocidad * auto.dir
 		}
 
 		im.Draw(win)
