@@ -4,141 +4,167 @@ import (
 	"math/rand"
 	"sync"
 	"time"
-
 	"github.com/faiface/pixel"
 	"github.com/faiface/pixel/pixelgl"
 	"github.com/faiface/pixel/imdraw"
 )
 
 const (
-	anchoVentana         = 800.0
-	altoVentana          = 600.0
-	espacios             = 10
-	tamanoEspacio        = anchoVentana / float64(espacios+1)
-	altoEspacio          = 100.0
-	anchoAuto            = 40.0
-	altoAuto             = 80.0
-	velocidad            = 1.0
-	grosorLineaDivisoria = 2.0
-	distanciaEntreAutos  = 10.0
+	anchoVentana   = 1024.0
+	altoVentana    = 768.0
+	espacios       = 20
+	tamanoEspacio  = 40.0
+	altoEspacio    = 100.0
+	anchoAuto      = 30.0
+	altoAuto       = 60.0
+	velocidad      = 2.0
+	entradaY       = altoVentana / 2
+	distanciaEntrada = 300.0
 )
 
-type Estacionamiento struct {
-	espacios   int
-	mu         sync.Mutex
-	ocupados   []*Auto
-	enEspera   []*Auto
-}
-
 type Auto struct {
-	posX float64
-	posY float64
-	dir  float64
+	posX, posY, dirX, metaY float64
 }
 
-func NuevoEstacionamiento(capacidad int) *Estacionamiento {
-	return &Estacionamiento{
-		espacios: capacidad,
-		ocupados: make([]*Auto, capacidad),
-	}
+type Estacionamiento struct {
+	espacios    [espacios]bool
+	enEspera    []*Auto
+	mu          sync.Mutex
 }
 
-func (e *Estacionamiento) Entrar(auto *Auto) int {
+func NuevoEstacionamiento() *Estacionamiento {
+	return &Estacionamiento{}
+}
+
+func (e *Estacionamiento) estacionar() int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	for i, lugar := range e.ocupados {
-		if lugar == nil {
-			e.ocupados[i] = auto
+	for i, ocupado := range e.espacios {
+		if !ocupado {
+			e.espacios[i] = true
 			return i
 		}
 	}
-
-	e.enEspera = append(e.enEspera, auto)
 	return -1
 }
 
-func (e *Estacionamiento) Salir(i int) {
+func (e *Estacionamiento) salir(pos int) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	e.ocupados[i] = nil
-	if len(e.enEspera) > 0 {
-		e.ocupados[i] = e.enEspera[0]
-		e.enEspera = e.enEspera[1:]
+	e.espacios[pos] = false
+}
+
+func (e *Estacionamiento) simularAuto(auto *Auto) {
+	// Anima el ingreso del auto al estacionamiento
+	for auto.posX < anchoVentana-distanciaEntrada {
+		auto.posX += velocidad
+		time.Sleep(time.Millisecond * 10)
+	}
+	auto.dirX = 1
+	auto.metaY = altoVentana - altoAuto/2
+
+	pos := e.estacionar()
+	if pos != -1 {
+		targetX := tamanoEspacio*float64(pos%(espacios/2)) + tamanoEspacio/2
+		if pos >= espacios/2 {
+			auto.metaY = altoAuto/2
+		}
+
+		for auto.posX != targetX || auto.posY != auto.metaY {
+			if auto.posX < targetX {
+				auto.posX += velocidad
+			} else if auto.posX > targetX {
+				auto.posX -= velocidad
+			}
+			if auto.posY < auto.metaY {
+				auto.posY += velocidad
+			} else if auto.posY > auto.metaY {
+				auto.posY -= velocidad
+			}
+			time.Sleep(time.Millisecond * 10)
+		}
+		auto.dirX = 0
+
+		// Espera un tiempo aleatorio
+		duracion := time.Second * time.Duration(rand.Intn(50)+10)
+		time.Sleep(duracion)
+		e.salir(pos)
+
+		// Anima la salida del auto
+		for auto.posX > 0 {
+			auto.posX -= velocidad
+			time.Sleep(time.Millisecond * 10)
+		}
+	} else {
+		// Si no hay espacio, el auto se va
+		for auto.posX > 0 {
+			auto.posX -= velocidad
+			time.Sleep(time.Millisecond * 10)
+		}
 	}
 }
 
 func run() {
-	rand.Seed(time.Now().UnixNano())
-
 	cfg := pixelgl.WindowConfig{
 		Title:  "Estacionamiento",
 		Bounds: pixel.R(0, 0, anchoVentana, altoVentana),
+		VSync:  true,
 	}
 	win, err := pixelgl.NewWindow(cfg)
 	if err != nil {
 		panic(err)
 	}
 
-	e := NuevoEstacionamiento(espacios)
+	e := NuevoEstacionamiento()
 
 	go func() {
 		for {
-			auto := &Auto{posX: -anchoAuto - distanciaEntreAutos, posY: altoVentana/2 + altoAuto/2, dir: 1}
-			pos := e.Entrar(auto)
-
-			if pos != -1 {
-				// Cuando un auto encuentra espacio, se estaciona y después de un tiempo se va
-				go func(p int) {
-					time.Sleep(time.Duration(rand.Intn(15)+5) * time.Second)
-					e.Salir(p)
-				}(pos)
+			auto := &Auto{
+				posX: 0,
+				posY: entradaY,
+				dirX: 1,
 			}
-			time.Sleep(time.Millisecond * 1500)
+			e.mu.Lock()
+			e.enEspera = append(e.enEspera, auto)
+			e.mu.Unlock()
+			go e.simularAuto(auto)
+			time.Sleep(time.Second * 2)
 		}
 	}()
 
 	for !win.Closed() {
-		win.Clear(pixel.RGB(0.8, 0.8, 0.8)) // Background claro
-		im := imdraw.New(nil)
+		win.Clear(pixel.RGB(0.9, 0.9, 0.9))
 
-		// Dibuja estacionamientos
+		// Dibujar estacionamiento
+		imd := imdraw.New(nil)
+		imd.Color = pixel.RGB(0.5, 0.5, 0.5)
 		for i := 0; i < espacios/2; i++ {
-			im.Color = pixel.RGB(0.5, 0.5, 0.5)
-			xStart := tamanoEspacio * float64(i)
-			im.Push(pixel.V(xStart, altoVentana/2+altoEspacio))
-			im.Push(pixel.V(xStart+tamanoEspacio-grosorLineaDivisoria, altoVentana/2))
-			im.Rectangle(0)
+			// Parte superior
+			imd.Push(pixel.V(tamanoEspacio*float64(i), altoVentana-altoEspacio))
+			imd.Push(pixel.V(tamanoEspacio*float64(i+1), altoVentana))
+			imd.Rectangle(0)
 
-			im.Push(pixel.V(xStart, altoVentana/2-altoEspacio))
-			im.Push(pixel.V(xStart+tamanoEspacio-grosorLineaDivisoria, altoVentana/2))
-			im.Rectangle(0)
+			// Parte inferior
+			imd.Push(pixel.V(tamanoEspacio*float64(i), 0))
+			imd.Push(pixel.V(tamanoEspacio*float64(i+1), altoEspacio))
+			imd.Rectangle(0)
 		}
+		imd.Draw(win)
 
-		// Dibuja autos
+		// Dibujar autos
 		e.mu.Lock()
-		for i, auto := range e.ocupados {
-			if auto != nil {
-				if i%2 == 0 {
-					auto.posY = altoVentana/2 + altoAuto/2
-				} else {
-					auto.posY = altoVentana/2 - altoAuto/2 - altoEspacio
-				}
-
-				im.Color = pixel.RGB(0, 0, 1)
-				im.Push(pixel.V(auto.posX, auto.posY))
-				im.Push(pixel.V(auto.posX+anchoAuto, auto.posY+altoAuto))
-				im.Rectangle(0)
-
-				if auto.posX < tamanoEspacio*float64(i/2) || auto.dir == -1 {
-					auto.posX += velocidad * auto.dir
-				}
-			}
+		for _, auto := range e.enEspera {
+			imd := imdraw.New(nil)
+			imd.Color = pixel.RGB(0, 0, 1)
+			imd.Push(pixel.V(auto.posX, auto.posY))
+			imd.Push(pixel.V(auto.posX+anchoAuto, auto.posY+altoAuto))
+			imd.Rectangle(0)
+			imd.Draw(win)
 		}
 		e.mu.Unlock()
 
-		im.Draw(win)
 		win.Update()
 	}
 }
@@ -146,4 +172,3 @@ func run() {
 func main() {
 	pixelgl.Run(run)
 }
-
