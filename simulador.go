@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math/rand"
 	"sync"
 	"time"
 
@@ -12,50 +13,65 @@ import (
 const (
 	anchoVentana         = 800.0
 	altoVentana          = 600.0
-	espacios             = 10 // 5 arriba y 5 abajo
-	tamanoEspacio        = anchoVentana / float64(espacios/2+1)
+	espacios             = 10
+	tamanoEspacio        = anchoVentana / float64(espacios+1)
 	altoEspacio          = 100.0
 	anchoAuto            = 40.0
-	altoAuto             = 60.0
-	velocidad            = 2.0
+	altoAuto             = 80.0
+	velocidad            = 1.0
+	grosorLineaDivisoria = 2.0
+	distanciaEntreAutos  = 10.0
 )
 
 type Estacionamiento struct {
 	espacios   int
 	mu         sync.Mutex
+	ocupados   []*Auto
+	enEspera   []*Auto
 }
 
 type Auto struct {
 	posX float64
 	posY float64
-	dir  float64 // -1 para los autos que salen, 1 para los autos que entran
+	dir  float64
 }
 
 func NuevoEstacionamiento(capacidad int) *Estacionamiento {
 	return &Estacionamiento{
 		espacios: capacidad,
+		ocupados: make([]*Auto, capacidad),
 	}
 }
 
-func (e *Estacionamiento) Entrar() int {
+func (e *Estacionamiento) Entrar(auto *Auto) int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if e.espacios > 0 {
-		pos := espacios - e.espacios
-		e.espacios--
-		return pos
+	for i, lugar := range e.ocupados {
+		if lugar == nil {
+			e.ocupados[i] = auto
+			return i
+		}
 	}
+
+	e.enEspera = append(e.enEspera, auto)
 	return -1
 }
 
-func (e *Estacionamiento) Salir(pos int) {
+func (e *Estacionamiento) Salir(i int) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.espacios++
+
+	e.ocupados[i] = nil
+	if len(e.enEspera) > 0 {
+		e.ocupados[i] = e.enEspera[0]
+		e.enEspera = e.enEspera[1:]
+	}
 }
 
 func run() {
+	rand.Seed(time.Now().UnixNano())
+
 	cfg := pixelgl.WindowConfig{
 		Title:  "Estacionamiento",
 		Bounds: pixel.R(0, 0, anchoVentana, altoVentana),
@@ -66,75 +82,61 @@ func run() {
 	}
 
 	e := NuevoEstacionamiento(espacios)
-	autos := make([]*Auto, 0)
 
 	go func() {
 		for {
-			pos := e.Entrar()
+			auto := &Auto{posX: -anchoAuto - distanciaEntreAutos, posY: altoVentana/2 + altoAuto/2, dir: 1}
+			pos := e.Entrar(auto)
+
 			if pos != -1 {
-				auto := &Auto{posX: 0 - anchoAuto, posY: altoVentana / 2 + altoAuto/2, dir: 1}
-				autos = append(autos, auto)
-				time.Sleep(time.Millisecond * 800)
+				// Cuando un auto encuentra espacio, se estaciona y después de un tiempo se va
+				go func(p int) {
+					time.Sleep(time.Duration(rand.Intn(15)+5) * time.Second)
+					e.Salir(p)
+				}(pos)
 			}
-
-			if len(autos) > 0 && autos[0].posX > anchoVentana {
-				e.Salir(0)
-				autos = autos[1:]
-			}
-		}
-	}()
-
-	go func() {
-		for {
-			pos := e.Entrar()
-			if pos != -1 {
-				auto := &Auto{posX: anchoVentana, posY: altoVentana/2 - 3*altoAuto/2, dir: -1}
-				autos = append(autos, auto)
-				time.Sleep(time.Millisecond * 1300)
-			}
-
-			if len(autos) > 0 && autos[0].posX < 0-anchoAuto {
-				e.Salir(0)
-				autos = autos[1:]
-			}
+			time.Sleep(time.Millisecond * 1500)
 		}
 	}()
 
 	for !win.Closed() {
-		win.Clear(pixel.RGB(0, 0, 0))
+		win.Clear(pixel.RGB(0.8, 0.8, 0.8)) // Background claro
 		im := imdraw.New(nil)
 
-		// Dibuja estacionamiento
-		im.Color = pixel.RGB(0.5, 0.5, 0.5)
-		im.Push(pixel.V(0, altoVentana/2+altoEspacio))
-		im.Push(pixel.V(anchoVentana, altoVentana/2-altoEspacio))
-		im.Rectangle(0)
-
-		// Dibuja espacios de estacionamiento
+		// Dibuja estacionamientos
 		for i := 0; i < espacios/2; i++ {
-			posX := tamanoEspacio * float64(i+1)
-
-			// Arriba
-			im.Color = pixel.RGB(1, 1, 1)
-			im.Push(pixel.V(posX, altoVentana/2+altoEspacio))
-			im.Push(pixel.V(posX+tamanoEspacio, altoVentana))
+			im.Color = pixel.RGB(0.5, 0.5, 0.5)
+			xStart := tamanoEspacio * float64(i)
+			im.Push(pixel.V(xStart, altoVentana/2+altoEspacio))
+			im.Push(pixel.V(xStart+tamanoEspacio-grosorLineaDivisoria, altoVentana/2))
 			im.Rectangle(0)
 
-			// Abajo
-			im.Push(pixel.V(posX, 0))
-			im.Push(pixel.V(posX+tamanoEspacio, altoVentana/2-altoEspacio))
+			im.Push(pixel.V(xStart, altoVentana/2-altoEspacio))
+			im.Push(pixel.V(xStart+tamanoEspacio-grosorLineaDivisoria, altoVentana/2))
 			im.Rectangle(0)
 		}
 
 		// Dibuja autos
-		for _, auto := range autos {
-			im.Color = pixel.RGB(0, 0, 1)
-			im.Push(pixel.V(auto.posX, auto.posY))
-			im.Push(pixel.V(auto.posX+anchoAuto, auto.posY+altoAuto))
-			im.Rectangle(0)
+		e.mu.Lock()
+		for i, auto := range e.ocupados {
+			if auto != nil {
+				if i%2 == 0 {
+					auto.posY = altoVentana/2 + altoAuto/2
+				} else {
+					auto.posY = altoVentana/2 - altoAuto/2 - altoEspacio
+				}
 
-			auto.posX += velocidad * auto.dir
+				im.Color = pixel.RGB(0, 0, 1)
+				im.Push(pixel.V(auto.posX, auto.posY))
+				im.Push(pixel.V(auto.posX+anchoAuto, auto.posY+altoAuto))
+				im.Rectangle(0)
+
+				if auto.posX < tamanoEspacio*float64(i/2) || auto.dir == -1 {
+					auto.posX += velocidad * auto.dir
+				}
+			}
 		}
+		e.mu.Unlock()
 
 		im.Draw(win)
 		win.Update()
@@ -144,3 +146,4 @@ func run() {
 func main() {
 	pixelgl.Run(run)
 }
+
