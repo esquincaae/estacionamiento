@@ -42,24 +42,25 @@ func NuevoEstacionamiento() *Estacionamiento {
 }
 
 func (e *Estacionamiento) estacionar(auto *Auto) int {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+    e.mu.Lock()
+    defer e.mu.Unlock()
 
-	for i, ocupado := range e.espacios {
-		if !ocupado {
-			e.espacios[i] = true
-			auto.metaX = tamanoEspacio*float64(i%(espacios/2)) + tamanoEspacio/2 // X es el centro de la columna
-			fila := i / (espacios / 2)
-			if fila == 0 {
-				auto.metaY = altoVentana - altoEspacio/2 // Y es el centro para fila 0
-			} else {
-				auto.metaY = altoEspacio/2 // Y es el centro para fila 1
-			}
-			e.autos = append(e.autos, auto)
-			return i
-		}
-	}
-	return -1
+    for i, ocupado := range e.espacios {
+        if !ocupado {
+            e.espacios[i] = true
+            columna := i % (espacios / 2)
+            fila := i / (espacios / 2)
+            auto.metaX = tamanoEspacio/2 + tamanoEspacio*float64(columna) + (anchoVentana-espacios/2*tamanoEspacio)/2 // centrar los espacios en el cuadro
+            if fila == 0 {
+                auto.metaY = altoVentana - altoEspacio - altoAuto/2 // fila superior dentro del cuadro
+            } else {
+                auto.metaY = altoEspacio + altoAuto/2 // fila inferior dentro del cuadro
+            }
+            e.autos = append(e.autos, auto)
+            return i
+        }
+    }
+    return -1
 }
 
 func (e *Estacionamiento) salir(auto *Auto) {
@@ -145,46 +146,60 @@ func run() {
 
 	imd := imdraw.New(nil) // Crear una sola instancia de imdraw.IMDraw
 
-	go func() {
-		for {
-			auto := &Auto{}
-			go e.simularAuto(auto)
-			time.Sleep(time.Second * time.Duration(rand.Intn(10)+1))
-		}
-	}()
+	// Iniciar goroutines para simular los autos
+	for i := 0; i < 5; i++ { // Simular 5 autos como ejemplo
+		auto := &Auto{} // Crear una nueva instancia de Auto
+		go e.simularAuto(auto) // Lanzar la simulación en una nueva goroutine
+		time.Sleep(time.Second) // Esperar un segundo antes de lanzar la siguiente goroutine
+	}
 
 	for !win.Closed() {
-		win.Clear(pixel.RGB(0.9, 0.9, 0.9))
+        win.Clear(pixel.RGB(0.9, 0.9, 0.9)) // Establece el color de fondo a blanco grisáceo
 
-		// Dibujar estacionamiento
-		imd.Clear() // Limpiar la instancia imd antes de dibujar las divisiones
-		imd.Color = pixel.RGB(0.5, 0.5, 0.5)
-		for i := 0; i < espacios/2; i++ {
-			// Parte superior
-			imd.Push(pixel.V(tamanoEspacio*float64(i)+tamanoEspacio/2, altoVentana-altoEspacio/2))
-			imd.Push(pixel.V(tamanoEspacio*float64(i+1)+tamanoEspacio/2, altoVentana))
-			imd.Rectangle(0)
+		// Dibujar el borde del estacionamiento
+		imd.Clear()
+		imd.Color = pixel.RGB(0, 0, 0) // Establece el color a negro para el borde
+		// Dibuja un rectángulo que representa el borde del estacionamiento
+		imd.Push(pixel.V(tamanoEspacio, altoEspacio)) // Esquina inferior izquierda del estacionamiento
+		imd.Push(pixel.V(anchoVentana-tamanoEspacio, altoVentana-altoEspacio)) // Esquina superior derecha del estacionamiento
+		imd.Rectangle(3)
 
-			// Parte inferior
-			imd.Push(pixel.V(tamanoEspacio*float64(i)+tamanoEspacio/2, altoEspacio/2))
-			imd.Push(pixel.V(tamanoEspacio*float64(i+1)+tamanoEspacio/2, 0))
-			imd.Rectangle(0)
-		}
-		imd.Draw(win)
+		// Dibujar la entrada/salida
+		imd.Color = pixel.RGB(0.9, 0.9, 0.9) // Establece el color a blanco grisáceo para la entrada/salida
+		imd.Push(pixel.V(tamanoEspacio, entradaY+altoAuto/2)) // Parte superior de la entrada/salida
+		imd.Push(pixel.V(tamanoEspacio*1.5, entradaY-altoAuto/2)) // Parte inferior de la entrada/salida
+		imd.Rectangle(3)
 
-		// Dibujar autos
+		 // Dibujar los espacios de estacionamiento
+		 imd.Color = pixel.RGB(0.5, 0.5, 0.5) // Establece el color para los espacios de estacionamiento
+		 for i := 0; i < espacios; i++ {
+			 columna := i % (espacios / 2)
+			 fila := i / (espacios / 2)
+			 x := tamanoEspacio/2 + tamanoEspacio*float64(columna) + (anchoVentana-espacios/2*tamanoEspacio)/2 // centrar los espacios en el cuadro
+			 var y float64
+			 if fila == 0 {
+				 y = altoVentana - altoEspacio - altoAuto/2 // fila superior dentro del cuadro
+			 } else {
+				 y = altoEspacio + altoAuto/2 // fila inferior dentro del cuadro
+			 }
+			 imd.Push(pixel.V(x-anchoAuto/2, y-altoAuto/2))
+			 imd.Push(pixel.V(x+anchoAuto/2, y+altoAuto/2))
+			 imd.Rectangle(1)
+		 }
+
+		// Dibujar los autos (esto es solo un ejemplo, necesitas tu propia lógica aquí)
 		e.mu.Lock()
 		for _, auto := range e.autos {
-			imd.Color = pixel.RGB(0, 0, 1)
+			imd.Color = pixel.RGB(0, 0, 1) // Establece el color a azul para los autos
 			imd.Push(pixel.V(auto.posX-anchoAuto/2, auto.posY-altoAuto/2))
 			imd.Push(pixel.V(auto.posX+anchoAuto/2, auto.posY+altoAuto/2))
 			imd.Rectangle(0)
 		}
 		e.mu.Unlock()
 
-		imd.Draw(win)
+		imd.Draw(win) // Dibuja todo lo que se ha añadido a imd en la ventana
 
-		win.Update()
+		win.Update() // Actualiza la ventana para mostrar los cambios
 	}
 }
 
