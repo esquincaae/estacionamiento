@@ -1,6 +1,6 @@
-module simulador
+module carro
 
-go 1.20
+go 1.21.1
 
 require (
 	github.com/faiface/pixel v0.10.0
