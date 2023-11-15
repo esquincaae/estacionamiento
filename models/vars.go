@@ -10,9 +10,9 @@ const (
 )
 
 var (
-	EstadoCarril [numCarriles]bool
-	Vehiculos    []Vehiculo
-	MutexVehiculos  sync.Mutex
-	MutexCarril  sync.Mutex
-	VehiculoEntrandoOSaliendo bool
+	EstadoCarril 				[numCarriles]bool
+	Vehiculos    				[]Vehiculo
+	MutexVehiculos  			sync.Mutex
+	MutexCarril  				sync.Mutex
+	VehiculoEntrandoOSaliendo 	bool
 )

@@ -9,9 +9,9 @@ import (
 	"carro/views"
 )
 
-func Ejecutar() {
+func Run() {
 
-	models.Run()
+	models.Inicializar()
 
 	ventana, err := pixelgl.NewWindow(pixelgl.WindowConfig{
 		Title:  "Simulación de Estacionamiento",
@@ -31,7 +31,7 @@ func Ejecutar() {
 			}
 			models.MutexCarril.Unlock()
 
-			go models.AsignarCarril(vehiculo.ID)
+			go models.Carril(vehiculo.ID)
 		}
 	}()
 
