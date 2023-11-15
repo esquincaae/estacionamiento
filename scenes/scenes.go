@@ -6,42 +6,25 @@ import (
 	"github.com/faiface/pixel/pixelgl"
 	"golang.org/x/image/colornames"
 	"carro/models"
-	"carro/views"
 )
 
 func Run() {
-
 	models.Inicializar()
 
 	ventana, err := pixelgl.NewWindow(pixelgl.WindowConfig{
-		Title:  "Simulación de Estacionamiento",
+		Title:  "Estacionamiento concurrente",
 		Bounds: pixel.R(0, 0, 800, 600),
 	})
 	if err != nil {
 		panic(err)
 	}
 
-	go func() {
-		for vehiculo := range models.CanalVehiculos {
-			models.MutexCarril.Lock()
-			for _, ocupado := range models.EstadoCarril {
-				if !ocupado {
-					break
-				}
-			}
-			models.MutexCarril.Unlock()
-
-			go models.Carril(vehiculo.ID)
-		}
-	}()
+	go GestionarVehiculos()
 
 	for !ventana.Closed() {
 		ventana.Clear(colornames.White)
-		views.DibujarEstacionamiento(ventana, models.ObtenerVehiculos())
-		ventana.Update()
-		models.MutexVehiculos.Lock()
-		models.LogicaMovimientoVehiculos()
-		models.MutexVehiculos.Unlock()
+		Renderizar(ventana)
+		ActualizarLogica()
 
 		time.Sleep(16 * time.Millisecond)
 	}
